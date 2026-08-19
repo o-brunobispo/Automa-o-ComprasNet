@@ -36,7 +36,7 @@
             pdfBtn.style.marginRight = '15px';
 
             // Define o ícone de PDF utilizando o FontAwesome já embutido na página
-            pdfBtn.innerHTML = '<i class="fa fa-file-pdf-o"></i>';
+            pdfBtn.innerHTML = '<i class="fa fa-file-pdf-o" style="margin-left:10px"></i>';
 
             // Insere o novo botão de PDF na página, logo antes do botão da impressora
             printerBtn.parentNode.insertBefore(pdfBtn, printerBtn);
