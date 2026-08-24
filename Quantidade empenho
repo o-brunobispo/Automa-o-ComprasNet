@@ -1,0 +1,58 @@
+// ==UserScript==
+// @name         Destacar Quantidade Excedente - Contratos.gov
+// @namespace    http://tampermonkey.net/
+// @version      1.0
+// @description  Destaca o campo "Qtd" se o valor digitado for maior que a "Qtd. de Item" disponível.
+// @author       Você
+// @match        https://contratos.comprasnet.gov.br/empenho/subelemento/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Aguarda o carregamento do jQuery nativo da página
+    $(document).ready(function() {
+
+        // Intercepta qualquer digitação (input) nos campos que contêm a classe nativa .qtd
+        $('body').on('input', '.qtd', function() {
+            let inputEl = $(this);
+
+            // Pega o valor atual do campo e utiliza a função nativa ptToEn para converter em float
+            let valorDigitadoStr = inputEl.val();
+            let valorDigitado = parseFloat(ptToEn(valorDigitadoStr)) || 0;
+
+            // O sistema costuma guardar a quantidade máxima no atributo data-qtditem
+            let qtdMaximaAtributo = inputEl.data('qtditem');
+            let qtdMaxima = 0;
+
+            if (qtdMaximaAtributo !== undefined) {
+                qtdMaxima = parseFloat(qtdMaximaAtributo);
+            } else {
+                // Fallback de segurança: busca a informação diretamente na tabela visual.
+                // Na tabela renderizada, "Qtd. de Item" é a 5ª célula (índice 4) visível.
+                let textoQtdColuna = inputEl.closest('tr').find('td').eq(4).text();
+                qtdMaxima = parseFloat(ptToEn(textoQtdColuna)) || 0;
+            }
+
+            // Aplica a regra de validação visual
+            if (valorDigitado > qtdMaxima) {
+                // Deixa o campo destacado indicando erro
+                inputEl.css({
+                    'background-color': '#ffcccc', // Fundo vermelho claro
+                    'border': '2px solid red',     // Borda vermelha
+                    'color': '#900',
+                    'font-weight': 'bold'
+                });
+            } else {
+                // Restaura o layout padrão se o valor for ajustado e estiver correto
+                inputEl.css({
+                    'background-color': '',
+                    'border': '',
+                    'color': '',
+                    'font-weight': ''
+                });
+            }
+        });
+    });
+})();
