@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Botão baixar empenho PDF - Contratos.gov
+// @name         Botão baixar empenho PDF e Alterações - Contratos.gov
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Cria um botão para abrir a versão em PDF da minuta ao lado do botão de imprimir.
+// @version      1.2
+// @description  Cria botões PDF, Alteração, Alteração Fonte e expande/copia a descrição automaticamente.
 // @author       Você
 // @match        *://contratos.comprasnet.gov.br/empenho/minuta/*
 // @grant        none
@@ -11,35 +11,103 @@
 (function() {
     'use strict';
 
-    // Aguarda o carregamento completo da página
     window.addEventListener('load', function() {
 
-        // Localiza o botão de impressão atual pelo href específico
+        // ==========================================
+        // 1. CRIAR BOTÕES (PDF, Alteração, Alteração Fonte)
+        // ==========================================
         const printerBtn = document.querySelector('a[href="javascript: window.print();"]');
-
         if (printerBtn) {
-            // Cria o novo elemento âncora (botão)
-            const pdfBtn = document.createElement('a');
-
-            // Pega a URL atual, remove a barra final (se houver) e os parâmetros de busca, depois adiciona '/pdf'
             let baseUrl = window.location.origin + window.location.pathname;
             baseUrl = baseUrl.replace(/\/$/, '');
+            
+            const parent = printerBtn.parentNode;
 
-            // Configura o link e a abertura em nova aba
+            // --- Botão PDF ---
+            const pdfBtn = document.createElement('a');
             pdfBtn.href = baseUrl + '/pdf';
             pdfBtn.target = '_blank';
-
-            // Copia as classes do botão de imprimir para manter o estilo idêntico
             pdfBtn.className = printerBtn.className;
+            pdfBtn.style.marginLeft = '10px';
+            pdfBtn.innerHTML = '<i class="fa fa-file-pdf-o"></i>';
+            pdfBtn.title = 'Abrir PDF em nova guia';
+            parent.insertBefore(pdfBtn, printerBtn);
 
-            // Adiciona um pequeno espaçamento à direita para não colar na impressora
-            pdfBtn.style.marginRight = '15px';
+            // --- Botão Alteração ---
+            const altBtn = document.createElement('a');
+            altBtn.href = baseUrl + '/alteracao';
+            altBtn.target = '_blank';
+            altBtn.className = printerBtn.className;
+            altBtn.style.marginLeft = '10px';
+            altBtn.innerHTML = '<i class="fa fa-edit"></i>'; // Ícone de edição
+            altBtn.title = 'Página de alteração';
+            parent.insertBefore(altBtn, printerBtn);
 
-            // Define o ícone de PDF utilizando o FontAwesome já embutido na página
-            pdfBtn.innerHTML = '<i class="fa fa-file-pdf-o" style="margin-left:10px"></i>';
+            // --- Botão Alteração Fonte ---
+            const altFonteBtn = document.createElement('a');
+            altFonteBtn.href = baseUrl + '/alteracaoFonte';
+            altFonteBtn.target = '_blank';
+            altFonteBtn.className = printerBtn.className;
+            altFonteBtn.style.marginLeft = '10px';
+            altFonteBtn.innerHTML = '<i class="fa fa-exchange"></i>'; // Ícone de troca/fonte
+            altFonteBtn.title = 'Página de alteração de fonte';
+            parent.insertBefore(altFonteBtn, printerBtn);
+        }
 
-            // Insere o novo botão de PDF na página, logo antes do botão da impressora
-            printerBtn.parentNode.insertBefore(pdfBtn, printerBtn);
+        // ==========================================
+        // 2. EXPANDIR DESCRIÇÃO E BOTÃO COPIAR
+        // ==========================================
+        // Procura todos os elementos em negrito (strong) dentro de colunas (td)
+        const labels = document.querySelectorAll('td strong');
+
+        for (let label of labels) {
+            // Encontra exatamente a linha onde está escrito "Descricao"
+            if (label.innerText.trim() === 'Descricao') {
+                // Pega a coluna ao lado (onde fica o valor)
+                const valueTd = label.parentElement.nextElementSibling;
+
+                if (valueTd) {
+                    const span = valueTd.querySelector('span[title]');
+
+                    if (span) {
+                        // Pega o texto completo que fica oculto no 'title'
+                        const fullText = span.getAttribute('title');
+
+                        // Substitui o texto com "..." pelo texto completo
+                        span.innerText = fullText;
+
+                        // Remove o tooltip original para não ficar repetitivo
+                        span.removeAttribute('title');
+
+                        // Cria o botão de copiar
+                        const copyBtn = document.createElement('button');
+                        copyBtn.className = 'btn btn-default btn-xs'; // Classes padrão do sistema
+                        copyBtn.style.marginLeft = '10px';
+                        copyBtn.title = 'Copiar descrição';
+                        copyBtn.innerHTML = '<i class="fa fa-copy"></i>';
+
+                        // Adiciona a funcionalidade de clique ao botão
+                        copyBtn.addEventListener('click', function(e) {
+                            e.preventDefault(); // Evita recarregar a página
+
+                            // Copia o texto para a área de transferência
+                            navigator.clipboard.writeText(fullText).then(() => {
+                                // Feedback visual de sucesso
+                                copyBtn.innerHTML = '<i class="fa fa-check text-success"></i> Copiado!';
+                                setTimeout(() => {
+                                    copyBtn.innerHTML = '<i class="fa fa-copy"></i>';
+                                }, 2000);
+                            }).catch(err => {
+                                console.error('Erro ao copiar o texto: ', err);
+                            });
+                        });
+
+                        // Insere o botão do lado do texto
+                        valueTd.appendChild(copyBtn);
+                    }
+                }
+                break; // Interrompe o loop pois já achou o campo certo
+            }
         }
     });
 })();
