@@ -1,0 +1,65 @@
+// ==UserScript==
+// @name         Preenchimento em Lote de Quantidades - Contratos.gov
+// @namespace    http://tampermonkey.net/
+// @version      1.1
+// @description  Preenche as quantidades sequencialmente a partir de valores colados (separados por espaço, vírgula ou quebra de linha).
+// @author       Você
+// @match        https://contratos.comprasnet.gov.br/empenho/subelemento/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Aguarda o carregamento do jQuery e da página
+    $(document).ready(function() {
+
+        // Cria a interface da caixa de texto
+        let container = $('<div style="margin-bottom: 20px; padding: 15px; background: #f4f4f4; border: 1px solid #ccc; border-radius: 5px;"></div>');
+        let label = $('<strong>Preenchimento Rápido de Quantidades: </strong><br><small>Digite os valores separados por <b>espaço, vírgula</b> ou cole uma coluna do Excel. Aperte <b>ENTER</b> para preencher a tabela.</small><br>');
+        let textarea = $('<textarea id="loteQtd" style="width: 100%; height: 80px; margin-top: 10px; resize: vertical;" placeholder="Ex: 100, 200, 50, 600, 30\n\nOu cole os valores aqui..."></textarea>');
+
+        // Monta o bloco e o insere logo antes da tabela de itens
+        container.append(label).append(textarea);
+        $('#dataTableBuilder').before(container);
+
+        // Escuta a digitação na nossa caixa de texto
+        textarea.on('keydown', function(e) {
+
+            // Verifica se a tecla apertada foi o Enter (sem estar segurando o Shift)
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault(); // Evita que o Enter crie uma nova linha
+
+                let texto = $(this).val();
+
+                // NOVIDADE: A expressão /[\s,]+/ quebra o texto por qualquer espaço em branco, quebra de linha OU vírgula
+                let valores = texto.split(/[\s,]+/).filter(val => val.trim() !== "");
+
+                if (valores.length === 0) return;
+
+                // Seleciona todos os campos de quantidade da tabela original
+                let inputsQtd = $('.qtd');
+
+                // Percorre os campos da tabela e injeta os valores
+                inputsQtd.each(function(index) {
+                    if (index < valores.length) {
+                        let novoValor = valores[index];
+
+                        // Preenche o input original
+                        $(this).val(novoValor);
+
+                        // Dispara o evento nativo do sistema para calcular os totais
+                        $(this).trigger('input');
+                    }
+                });
+
+                // Feedback visual: Pisca a caixa de texto em verde
+                let bgOriginal = $(this).css('background-color');
+                $(this).css('background-color', '#d4edda');
+                setTimeout(() => {
+                    $(this).css('background-color', bgOriginal);
+                }, 400);
+            }
+        });
+    });
+})();
