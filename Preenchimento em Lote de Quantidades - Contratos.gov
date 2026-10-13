@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Preenchimento em Lote de Quantidades - Contratos.gov
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Preenche as quantidades sequencialmente a partir de valores colados (separados por espaço, vírgula ou quebra de linha).
+// @version      1.2
+// @description  Preenche as quantidades sequencialmente ou por pares (Item, Quantidade).
 // @author       Você
 // @match        https://contratos.comprasnet.gov.br/empenho/subelemento/*
 // @grant        none
@@ -11,49 +11,71 @@
 (function() {
     'use strict';
 
-    // Aguarda o carregamento do jQuery e da página
     $(document).ready(function() {
 
-        // Cria a interface da caixa de texto
+        // Cria a interface
         let container = $('<div style="margin-bottom: 20px; padding: 15px; background: #f4f4f4; border: 1px solid #ccc; border-radius: 5px;"></div>');
-        let label = $('<strong>Preenchimento Rápido de Quantidades: </strong><br><small>Digite os valores separados por <b>espaço, vírgula</b> ou cole uma coluna do Excel. Aperte <b>ENTER</b> para preencher a tabela.</small><br>');
-        let textarea = $('<textarea id="loteQtd" style="width: 100%; height: 80px; margin-top: 10px; resize: vertical;" placeholder="Ex: 100, 200, 50, 600, 30\n\nOu cole os valores aqui..."></textarea>');
+        let label = $('<strong>Preenchimento Rápido de Quantidades: </strong><br><small>Aperte <b>ENTER</b> dentro da caixa de texto para aplicar os valores.</small><br>');
 
-        // Monta o bloco e o insere logo antes da tabela de itens
-        container.append(label).append(textarea);
+        // Cria a chave (checkbox) para o modo Item/Quantidade
+        let divModo = $('<div style="margin-top: 8px; margin-bottom: 8px;"></div>');
+        let checkboxModo = $('<input type="checkbox" id="modoPar" style="margin-right: 5px; cursor: pointer;">');
+        let labelModo = $('<label for="modoPar" style="cursor: pointer; font-weight: normal;">Ativar modo <b>Item, Quantidade</b> (Ex: 1, 50, 6, 30)</label>');
+        divModo.append(checkboxModo).append(labelModo);
+
+        let textarea = $('<textarea id="loteQtd" style="width: 100%; height: 80px; resize: vertical;" placeholder="Sequencial (Ex: 100, 200, 50)\n\nModo Item/Qtd (Ex: 1, 50, 6, 30)"></textarea>');
+
+        // Insere tudo na página antes da tabela
+        container.append(label).append(divModo).append(textarea);
         $('#dataTableBuilder').before(container);
 
-        // Escuta a digitação na nossa caixa de texto
+        // Escuta a digitação
         textarea.on('keydown', function(e) {
 
-            // Verifica se a tecla apertada foi o Enter (sem estar segurando o Shift)
             if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault(); // Evita que o Enter crie uma nova linha
+                e.preventDefault();
 
                 let texto = $(this).val();
-
-                // NOVIDADE: A expressão /[\s,]+/ quebra o texto por qualquer espaço em branco, quebra de linha OU vírgula
                 let valores = texto.split(/[\s,]+/).filter(val => val.trim() !== "");
 
                 if (valores.length === 0) return;
 
-                // Seleciona todos os campos de quantidade da tabela original
+                let isModoPar = $('#modoPar').is(':checked');
                 let inputsQtd = $('.qtd');
 
-                // Percorre os campos da tabela e injeta os valores
-                inputsQtd.each(function(index) {
-                    if (index < valores.length) {
-                        let novoValor = valores[index];
+                if (isModoPar) {
+                    // MODO 2: Lê em pares [Item, Quantidade]
+                    for (let i = 0; i < valores.length; i += 2) {
+                        let numItemDesejado = parseInt(valores[i], 10);
+                        let qtdDesejada = valores[i+1];
 
-                        // Preenche o input original
-                        $(this).val(novoValor);
+                        // Se faltar o par da quantidade no último item, interrompe para evitar erro
+                        if (qtdDesejada === undefined) break;
 
-                        // Dispara o evento nativo do sistema para calcular os totais
-                        $(this).trigger('input');
+                        // Procura o item correspondente na tabela
+                        inputsQtd.each(function() {
+                            // Pega o número do item na 3ª coluna visível da tabela (índice 2)
+                            let textoNumeroItem = $(this).closest('tr').find('td').eq(2).text().trim();
+                            let numItemAtual = parseInt(textoNumeroItem, 10);
+
+                            // Se o item da linha for o mesmo que o digitado, preenche e calcula
+                            if (numItemAtual === numItemDesejado) {
+                                $(this).val(qtdDesejada);
+                                $(this).trigger('input');
+                            }
+                        });
                     }
-                });
+                } else {
+                    // MODO 1: Sequencial (comportamento original)
+                    inputsQtd.each(function(index) {
+                        if (index < valores.length) {
+                            $(this).val(valores[index]);
+                            $(this).trigger('input');
+                        }
+                    });
+                }
 
-                // Feedback visual: Pisca a caixa de texto em verde
+                // Feedback visual (pisca verde)
                 let bgOriginal = $(this).css('background-color');
                 $(this).css('background-color', '#d4edda');
                 setTimeout(() => {
