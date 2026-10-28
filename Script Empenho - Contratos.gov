@@ -1,0 +1,425 @@
+// ==UserScript==
+// @name         Script Empenho - Contratos.gov
+// @namespace    http://tampermonkey.net/
+// @version      5.2
+// @description  Todas as funções unificadas. Expande a paginação para "Todos" automaticamente e valida saldo.
+// @author       Você
+// @match        *://contratos.comprasnet.gov.br/empenho/minuta/*
+// @match        *://contratos.comprasnet.gov.br/empenho/item/*
+// @match        *://contratos.comprasnet.gov.br/empenho/subelemento/*
+// @grant        none
+// @run-at       document-start
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const urlAtual = window.location.href;
+
+    // =========================================================================
+    // CSS PADRONIZADO (Painéis injetados nas páginas de Item/Subelemento)
+    // =========================================================================
+    const estiloPainel = `
+        margin-bottom: 20px;
+        padding: 15px;
+        background-color: #f4f6f9;
+        border: 1px solid #d2d6de;
+        border-radius: 4px;
+        border-left: 5px solid #3c8dbc;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    `;
+
+    // =========================================================================
+    // MÓDULO 1: PÁGINA DA MINUTA (Botões Rápidos, Snapshot HTML, Expandir Descrição)
+    // =========================================================================
+    if (urlAtual.includes('/empenho/minuta')) {
+
+        function aplicarMelhoriasMinuta() {
+            if (document.getElementById('btn-meu-pdf')) return true;
+
+            const printerBtn = document.querySelector('a[href="javascript: window.print();"]');
+            if (!printerBtn) return false;
+
+            const btnClass = printerBtn.className;
+            const parent = printerBtn.parentNode;
+            let urlLimpa = window.location.href.split('?')[0].replace(/\/$/, '');
+
+            let numeroEmpenho = "Minuta_Empenho";
+            const labels = document.querySelectorAll('td strong');
+
+            for (let label of labels) {
+                const textoItem = label.innerText.trim();
+                const valueTd = label.parentElement.nextElementSibling;
+
+                if (!valueTd) continue;
+
+                if (textoItem === 'Descricao' && !document.getElementById('btn-copiar-desc')) {
+                    const span = valueTd.querySelector('span[title]');
+                    if (span) {
+                        const fullText = span.getAttribute('title');
+                        span.innerText = fullText;
+                        span.removeAttribute('title');
+
+                        const copyBtn = document.createElement('button');
+                        copyBtn.id = 'btn-copiar-desc';
+                        copyBtn.className = 'btn btn-default btn-xs';
+                        copyBtn.style.marginLeft = '10px';
+                        copyBtn.innerHTML = '<i class="fa fa-copy"></i> Copiar';
+
+                        copyBtn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            navigator.clipboard.writeText(fullText).then(() => {
+                                copyBtn.innerHTML = '<i class="fa fa-check text-success"></i> Copiado!';
+                                setTimeout(() => copyBtn.innerHTML = '<i class="fa fa-copy"></i> Copiar', 2000);
+                            });
+                        });
+                        valueTd.appendChild(copyBtn);
+                    }
+                }
+
+                if (textoItem === 'Mensagem SIAFI') {
+                    const spanSiafi = valueTd.querySelector('span');
+                    if (spanSiafi) {
+                        numeroEmpenho = spanSiafi.innerText.replace(/[^a-zA-Z0-9]/g, '');
+                    }
+                }
+            }
+
+            function criarBotao(id, href, icone, titulo, target = '_blank') {
+                const btn = document.createElement('a');
+                btn.id = id;
+                btn.href = href;
+                if (target) btn.target = target;
+                btn.className = btnClass;
+                btn.style.marginRight = '7px';
+                btn.style.marginLeft = '7px';
+                btn.innerHTML = `<i class="fa ${icone}"></i>`;
+                btn.title = titulo;
+                return btn;
+            }
+
+            const pdfBtn = criarBotao('btn-meu-pdf', urlLimpa + '/pdf', 'fa-file-pdf-o', 'Abrir PDF em nova guia');
+            const altBtn = criarBotao('btn-meu-alt', urlLimpa + '/alteracao', 'fa-edit', 'Página de alteração');
+            const altFonteBtn = criarBotao('btn-meu-altfonte', urlLimpa + '/alteracaoFonte', 'fa-exchange', 'Página de alteração de fonte');
+            const atalhoBtn = criarBotao('btn-meu-atalho', '#', 'fa-desktop', 'Baixar Resumo Offline desta Minuta', '');
+
+            atalhoBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                let tabelasHtml = "";
+                const boxes = document.querySelectorAll('.box');
+
+                boxes.forEach(box => {
+                    const tituloEl = box.querySelector('.box-title');
+                    const tabelaEl = box.querySelector('table');
+                    if (tituloEl && tabelaEl) {
+                        tabelasHtml += `
+                        <div class="box">
+                            <div class="box-header"><h2>${tituloEl.innerText}</h2></div>
+                            <div class="box-body">${tabelaEl.outerHTML}</div>
+                        </div>`;
+                    }
+                });
+
+                const conteudoHtml = `<!DOCTYPE html>
+                <html lang="pt-BR">
+                <head>
+                    <meta charset="utf-8">
+                    <title>Empenho ${numeroEmpenho}</title>
+                    <style>
+                        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #ecf0f5; margin: 0; padding: 20px; color: #333; }
+                        .container { max-width: 1100px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                        .header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #eee; }
+                        .header-actions h1 { margin: 0; color: #3c8dbc; font-size: 26px;}
+                        .btn { display: inline-block; padding: 12px 24px; background-color: #00a65a; color: white; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 15px; transition: background 0.3s; border: none; cursor: pointer; }
+                        .btn:hover { background-color: #008d4c; }
+                        .box { border: 1px solid #d2d6de; margin-bottom: 25px; border-radius: 4px; background: #ffffff; overflow: hidden; }
+                        .box-header { background-color: #3c8dbc; color: #fff; padding: 12px 20px; }
+                        .box-header h2 { margin: 0; font-size: 18px; font-weight: normal; }
+                        .box-body { padding: 0; overflow-x: auto; }
+                        table { width: 100%; border-collapse: collapse; text-align: left; }
+                        td { padding: 12px 20px; border-bottom: 1px solid #f4f4f4; vertical-align: middle; }
+                        td:first-child { width: 35%; font-weight: 600; color: #444; border-right: 1px solid #f4f4f4; background-color: #fcfcfc;}
+                        tr:nth-child(even) td:last-child { background-color: #fdfdfd; }
+                        tr:hover td { background-color: #f5f5f5; }
+                        button { display: none; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="header-actions">
+                            <h1>Resumo do Empenho: ${numeroEmpenho}</h1>
+                            <a href="${window.location.href}" class="btn" target="_blank">Ver no Sistema</a>
+                        </div>
+                        ${tabelasHtml}
+                        <div style="text-align: center; margin-top: 40px; margin-bottom: 10px;">
+                            <a href="${window.location.href}" class="btn" target="_blank">Acessar Minuta Original no Contratos.gov</a>
+                        </div>
+                    </div>
+                </body>
+                </html>`;
+
+                const blob = new Blob([conteudoHtml], { type: 'text/html;charset=utf-8' });
+                const linkDownload = document.createElement('a');
+                linkDownload.href = URL.createObjectURL(blob);
+                linkDownload.download = `${numeroEmpenho}.html`;
+                document.body.appendChild(linkDownload);
+                linkDownload.click();
+                document.body.removeChild(linkDownload);
+                URL.revokeObjectURL(linkDownload.href);
+            });
+
+            parent.insertBefore(atalhoBtn, printerBtn);
+            parent.insertBefore(altFonteBtn, atalhoBtn);
+            parent.insertBefore(altBtn, altFonteBtn);
+            parent.insertBefore(pdfBtn, altBtn);
+
+            return true;
+        }
+
+        const observer = new MutationObserver((mutations, obs) => {
+            if (document.getElementById('btn-meu-pdf')) { obs.disconnect(); return; }
+            if (aplicarMelhoriasMinuta()) { obs.disconnect(); }
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+        document.addEventListener('DOMContentLoaded', aplicarMelhoriasMinuta);
+    }
+
+
+    // =========================================================================
+    // INICIALIZAÇÃO DE MÓDULOS DEPENDENTES DE JQUERY (Itens e Subelementos)
+    // =========================================================================
+    window.addEventListener('load', () => {
+        if (typeof $ === 'undefined') return;
+
+        // =========================================================================
+        // MÓDULO 2: SELEÇÃO AUTOMÁTICA DE ITENS (Página /item)
+        // =========================================================================
+        if (urlAtual.includes('/empenho/item')) {
+
+            // AUTOMATIZAÇÃO: Força a paginação para exibir "Todos" os itens ao carregar a página
+            const selectLength = $('select[name$="_length"]');
+            if (selectLength.length && selectLength.val() !== '-1') {
+                selectLength.val('-1').trigger('change');
+            }
+
+            const painelItens = $(`
+                <div style="${estiloPainel}">
+                    <h4 style="margin-top: 0; color: #3c8dbc; font-size: 16px; margin-bottom: 15px;">
+                        <i class="fa fa-check-square-o"></i> Seleção Automática de Itens
+                    </h4>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" id="inputItensManual" placeholder="Ex: 1, 4, 169 ou 1 4 169..."
+                               style="padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; width: 350px; font-size: 13px; color: #333;"
+                               title="Digite ou cole os números (separados por vírgula, espaço ou quebra de linha).">
+                        <button type="button" id="btnExecutarSelecao" class="btn btn-primary btn-sm" style="padding: 6px 12px; font-size: 13px;">
+                            <i class="fa fa-check"></i> Selecionar Itens
+                        </button>
+                    </div>
+                    <small style="color: #666; margin-top: 8px; display: block;">Paginação ajustada para exibir todos os itens. Itens zerados ou ocultos serão informados.</small>
+                </div>
+            `);
+
+            if ($('#dataTableBuilder').length) {
+                $('#dataTableBuilder').before(painelItens);
+            } else {
+                $('.box-body').first().prepend(painelItens);
+            }
+
+            $('#btnExecutarSelecao').on('click', processarSelecaoItens);
+            $('#inputItensManual').on('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    processarSelecaoItens();
+                }
+            });
+
+            function processarSelecaoItens() {
+                const texto = $('#inputItensManual').val().trim();
+                if (!texto) {
+                    alert('Por favor, digite ou cole pelo menos um número de item.');
+                    return;
+                }
+
+                const tokens = texto.split(/[\s,]+/);
+                const itensDesejados = new Set();
+
+                tokens.forEach(token => {
+                    const num = parseInt(token, 10);
+                    if (!isNaN(num) && num > 0) itensDesejados.add(num);
+                });
+
+                if (itensDesejados.size === 0) {
+                    alert('Nenhum número válido foi encontrado no campo.');
+                    return;
+                }
+
+                const scriptsHTML = document.documentElement.innerHTML;
+                const fornecedoresMatch = scriptsHTML.match(/let fornecedores = (\[.*?\]);/);
+
+                if (!fornecedoresMatch) {
+                    alert('Não foi possível localizar os dados dos fornecedores na página.');
+                    return;
+                }
+
+                const fornecedores = JSON.parse(fornecedoresMatch[1]);
+                if (typeof arrItensASubmeter !== 'undefined') arrItensASubmeter.length = 0;
+
+                $('input[type="checkbox"]').not('#selectAll').prop('checked', false);
+
+                let selecionadosCount = 0;
+                let naoEncontrados = [];
+                let itensZeradosOuOcultos = [];
+
+                itensDesejados.forEach(numDesejado => {
+                    let encontrado = false;
+
+                    fornecedores.forEach(forn => {
+                        if (parseInt(forn.numero, 10) === numDesejado) {
+                            encontrado = true;
+                            const itemIdStr = forn.compra_item_id.toString();
+
+                            const checkboxVisual = document.querySelector(`input[value="${itemIdStr}"]`);
+
+                            if (checkboxVisual) {
+                                if (typeof arrItensASubmeter !== 'undefined' && !arrItensASubmeter.includes(itemIdStr)) {
+                                    if (typeof toggleItensASubmeter === 'function') {
+                                        toggleItensASubmeter(itemIdStr, true);
+                                    } else {
+                                        arrItensASubmeter.push(itemIdStr);
+                                    }
+                                    checkboxVisual.checked = true;
+                                    selecionadosCount++;
+                                }
+                            } else {
+                                itensZeradosOuOcultos.push(numDesejado);
+                            }
+                        }
+                    });
+
+                    if (!encontrado) {
+                        naoEncontrados.push(numDesejado);
+                    }
+                });
+
+                let mensagem = `Pronto! ${selecionadosCount} item(ns) selecionado(s) com sucesso.`;
+
+                if (itensZeradosOuOcultos.length > 0) {
+                    mensagem += `\n\n⚠️ ATENÇÃO: Os seguintes itens estão com SALDO ZERADO ou expirados no sistema e foram ignorados: ${itensZeradosOuOcultos.join(', ')}`;
+                }
+                if (naoEncontrados.length > 0) {
+                    mensagem += `\n\n❌ Aviso: Os seguintes números não pertencem a este contrato: ${naoEncontrados.join(', ')}`;
+                }
+                alert(mensagem);
+            }
+        }
+
+        // =========================================================================
+        // MÓDULO 3: PREENCHIMENTO EM LOTE E VALIDAÇÃO EXCEDENTE (Página /subelemento)
+        // =========================================================================
+        if (urlAtual.includes('/empenho/subelemento')) {
+            const painelLote = $(`
+                <div style="${estiloPainel}">
+                    <h4 style="margin-top: 0; color: #3c8dbc; font-size: 16px; margin-bottom: 10px;">
+                        <i class="fa fa-list-ol"></i> Preenchimento Rápido de Quantidades
+                    </h4>
+                    <div style="margin-bottom: 10px;">
+                        <label style="cursor: pointer; font-weight: normal; color: #444;">
+                            <input type="checkbox" id="modoPar" style="margin-right: 5px; vertical-align: middle;">
+                            Ativar modo <b>[Item, Quantidade]</b> (Ex: 1, 50, 6, 30)
+                        </label>
+                    </div>
+                    <textarea id="loteQtd" style="width: 100%; height: 65px; resize: vertical; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;"
+                              placeholder="Modo Sequencial: 100, 200, 50\nModo Pares: 1, 100, 2, 200... (Aperte ENTER para aplicar na tabela)"></textarea>
+                    <small style="color: #666; margin-top: 8px; display: block;">Valores excedentes ficarão <b style="color: red;">destacados em vermelho</b> automaticamente.</small>
+                </div>
+            `);
+
+            if ($('#dataTableBuilder').length) {
+                $('#dataTableBuilder').before(painelLote);
+            } else {
+                $('.box-body').first().prepend(painelLote);
+            }
+
+            $('#loteQtd').on('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+
+                    let texto = $(this).val();
+                    let valores = texto.split(/[\s,]+/).filter(val => val.trim() !== "");
+
+                    if (valores.length === 0) return;
+
+                    let isModoPar = $('#modoPar').is(':checked');
+                    let inputsQtd = $('.qtd');
+
+                    if (isModoPar) {
+                        for (let i = 0; i < valores.length; i += 2) {
+                            let numItemDesejado = parseInt(valores[i], 10);
+                            let qtdDesejada = valores[i+1];
+                            if (qtdDesejada === undefined) break;
+
+                            inputsQtd.each(function() {
+                                let textoNumeroItem = $(this).closest('tr').find('td').eq(2).text().trim();
+                                let numItemAtual = parseInt(textoNumeroItem, 10);
+
+                                if (numItemAtual === numItemDesejado) {
+                                    $(this).val(qtdDesejada).trigger('input');
+                                }
+                            });
+                        }
+                    } else {
+                        inputsQtd.each(function(index) {
+                            if (index < valores.length) {
+                                $(this).val(valores[index]).trigger('input');
+                            }
+                        });
+                    }
+
+                    let bgOriginal = $(this).css('background-color');
+                    $(this).css('background-color', '#d4edda');
+                    setTimeout(() => $(this).css('background-color', bgOriginal), 400);
+                }
+            });
+
+            $('body').on('input', '.qtd', function() {
+                let inputEl = $(this);
+                let valorDigitadoStr = inputEl.val();
+
+                let valorDigitado = 0;
+                if (typeof ptToEn === 'function') {
+                    valorDigitado = parseFloat(ptToEn(valorDigitadoStr)) || 0;
+                } else {
+                    valorDigitado = parseFloat(valorDigitadoStr.replace(/\./g, '').replace(',', '.')) || 0;
+                }
+
+                let qtdMaximaAtributo = inputEl.data('qtditem');
+                let qtdMaxima = 0;
+
+                if (qtdMaximaAtributo !== undefined) {
+                    qtdMaxima = parseFloat(qtdMaximaAtributo);
+                } else {
+                    let textoQtdColuna = inputEl.closest('tr').find('td').eq(4).text();
+                    qtdMaxima = (typeof ptToEn === 'function')
+                        ? parseFloat(ptToEn(textoQtdColuna)) || 0
+                        : parseFloat(textoQtdColuna.replace(/\./g, '').replace(',', '.')) || 0;
+                }
+
+                if (valorDigitado > qtdMaxima) {
+                    inputEl.css({
+                        'background-color': '#ffcccc',
+                        'border': '2px solid red',
+                        'color': '#900',
+                        'font-weight': 'bold'
+                    });
+                } else {
+                    inputEl.css({
+                        'background-color': '',
+                        'border': '',
+                        'color': '',
+                        'font-weight': 'bold'
+                    });
+                }
+            });
+        }
+    });
+})();
